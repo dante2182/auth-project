@@ -2,7 +2,18 @@ import { Request, Response } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import { catchAsync } from "../../utils/catchAsync";
 import { forwardSetCookie } from "../../utils/cookies";
+import { ApiError } from "../../utils/ApiError";
 import { auth } from "../../auth/auth";
+
+// Convierte la respuesta de better-auth en un ApiError legible.
+const toApiError = async (
+  response: globalThis.Response,
+): Promise<ApiError> => {
+  const body = await response.json().catch(() => ({}));
+  const message =
+    typeof body?.message === "string" ? body.message : "Algo salió mal";
+  return new ApiError(response.status || 400, message);
+};
 
 export const register = catchAsync(async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
@@ -11,6 +22,7 @@ export const register = catchAsync(async (req: Request, res: Response) => {
     asResponse: true, // pedimos un Response nativo para poder leer/reenviar las cookies
   });
   forwardSetCookie(response, res);
+  if (!response.ok) throw await toApiError(response);
   const data = await response.json();
   res.status(201).json({ success: true, user: data.user });
 });
@@ -22,6 +34,7 @@ export const login = catchAsync(async (req: Request, res: Response) => {
     asResponse: true,
   });
   forwardSetCookie(response, res);
+  if (!response.ok) throw await toApiError(response);
   const data = await response.json();
   res.status(200).json({ success: true, user: data.user });
 });
@@ -32,6 +45,7 @@ export const logout = catchAsync(async (req: Request, res: Response) => {
     asResponse: true,
   });
   forwardSetCookie(response, res);
+  if (!response.ok) throw await toApiError(response);
   res
     .status(200)
     .json({ success: true, message: "Sesión cerrada correctamente" });

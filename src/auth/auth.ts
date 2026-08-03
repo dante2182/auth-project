@@ -26,7 +26,9 @@ export const auth = betterAuth({
   },
 
   rateLimit: {
-    enabled: true,
+    // Desactivado en tests para que las suites de integración no fallen
+    // al superar el máximo de peticiones por ventana.
+    enabled: env.NODE_ENV !== "test",
     window: 60, // 👈 typo corregido
     max: 10,
     storage: "memory",

@@ -14,6 +14,11 @@ app.get("/", (req: Request, res: Response) => res.send("Hello World!"));
 
 app.use("/api", routes);
 
+// 404 para rutas no definidas (debe ir antes del errorHandler)
+app.use((req: Request, res: Response) => {
+  res.status(404).json({ success: false, message: "Ruta no encontrada" });
+});
+
 app.use(errorHandler); // siempre al final
 
 export default app;
