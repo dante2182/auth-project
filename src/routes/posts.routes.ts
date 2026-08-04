@@ -11,6 +11,8 @@ import {
 const router = Router();
 
 router.get("/", postsController.getAllPosts);
+// /mine debe ir ANTES de /:id para que "mine" no pase por la validación de CUID.
+router.get("/mine", requireAuth, postsController.getMyPosts);
 // Validamos que :id sea un CUID antes de tocar la BD (evita 404 falsos, previene gasto de recursos)
 router.get("/:id", validate(postIdParamSchema), postsController.getPost);
 router.post(

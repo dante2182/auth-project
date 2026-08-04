@@ -138,6 +138,7 @@ Todas las rutas bajo `/api`.
 | Método | Ruta       | Descripción        | Auth |
 | ------ | ---------- | ------------------ | ---- |
 | GET    | `/`        | Listar publicados  | —    |
+| GET    | `/mine`    | Mis posts (públicos y borradores) | ✔️ |
 | GET    | `/:id`     | Ver un post        | —    |
 | POST   | `/`        | Crear post         | ✔️   |
 | PATCH  | `/:id`     | Editar post (dueño)| ✔️   |

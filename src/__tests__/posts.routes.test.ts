@@ -29,6 +29,36 @@ describe("GET /api/posts", () => {
   });
 });
 
+describe("GET /api/posts/mine", () => {
+  it("devuelve todos los posts del usuario (publicados y borradores)", async () => {
+    const { cookie } = await registerUser();
+    await createPost(cookie, { title: "Publicado", published: true });
+    await createPost(cookie, { title: "Borrador" });
+
+    const res = await api().get("/api/posts/mine").set("Cookie", cookie!);
+    expect(res.status).toBe(200);
+    expect(res.body.posts).toHaveLength(2);
+    const titles = res.body.posts.map((p: { title: string }) => p.title);
+    expect(titles).toContain("Publicado");
+    expect(titles).toContain("Borrador");
+  });
+
+  it("solo devuelve los posts del usuario logueado", async () => {
+    const { cookie } = await registerUser();
+    const { cookie: otherCookie } = await registerUser();
+    await createPost(otherCookie, { title: "Post de otro", published: true });
+
+    const res = await api().get("/api/posts/mine").set("Cookie", cookie!);
+    expect(res.status).toBe(200);
+    expect(res.body.posts).toHaveLength(0);
+  });
+
+  it("devuelve 401 sin autenticación", async () => {
+    const res = await api().get("/api/posts/mine");
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("POST /api/posts", () => {
   it("crea un post autenticado", async () => {
     const { cookie, user } = await registerUser();

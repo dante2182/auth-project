@@ -28,6 +28,16 @@ export const getPost = catchAsync(async (req: Request, res: Response) => {
   res.status(200).json({ success: true, post });
 });
 
+// Todos los posts del usuario logueado, publicados y borradores.
+export const getMyPosts = catchAsync(async (req: Request, res: Response) => {
+  if (!req.user) throw new ApiError(401, "No autenticado");
+  const posts = await prisma.post.findMany({
+    where: { authorId: req.user.id },
+    orderBy: { createdAt: "desc" },
+  });
+  res.status(200).json({ success: true, posts });
+});
+
 export const createPost = catchAsync(async (req: Request, res: Response) => {
   if (!req.user) throw new ApiError(401, "No autenticado");
   const post = await prisma.post.create({
