@@ -1,3 +1,8 @@
+// dotenv debe cargar ANTES que cualquier import de better-auth: el core de
+// Better Auth lee y cachea process.env.NODE_ENV al evaluar su módulo, así que
+// si .env se carga después, NODE_ENV queda "" → el rate limit no puede resolver
+// la IP (sin fallback a localhost) y cae en un bucket compartido (warning + 429).
+import "dotenv/config";
 import app from "./app";
 import { prisma } from "./config/database";
 import { env } from "./config/env";

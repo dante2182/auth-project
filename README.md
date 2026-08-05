@@ -12,7 +12,7 @@ API backend con **Express + TypeScript**, autenticación con **Better Auth** y p
 | --------- | -------------------------------------- |
 | Runtime   | Node.js + TypeScript (tsx)             |
 | Framework | Express 5                              |
-| Auth      | Better Auth (email/password + sesiones)|
+| Auth      | Better Auth (email/password + OAuth GitHub/Google + sesiones) |
 | Validación| Zod 4                                  |
 | ORM       | Prisma 7 + PostgreSQL                  |
 | Tests     | Vitest + Supertest                     |
@@ -76,8 +76,56 @@ API backend con **Express + TypeScript**, autenticación con **Better Auth** y p
 | `BETTER_AUTH_SECRET`| Secreto (mín. 32 caracteres)             |
 | `BETTER_AUTH_URL`   | URL base de la API                       |
 | `CORS_ORIGIN`       | Origen permitido por CORS (default `http://localhost:5173`) |
+| `GITHUB_CLIENT_ID`  | Client ID de la OAuth App de GitHub (obligatorio) |
+| `GITHUB_CLIENT_SECRET` | Client secret de GitHub (obligatorio)  |
+| `GOOGLE_CLIENT_ID`  | Client ID de OAuth 2.0 de Google (obligatorio) |
+| `GOOGLE_CLIENT_SECRET` | Client secret de Google (obligatorio)  |
 | `ADMIN_EMAIL`       | Email del admin sembrado con `db:seed`   |
 | `ADMIN_PASSWORD`    | Password del admin (mín. 8 caracteres)   |
+
+---
+
+## Inicio de sesión con proveedores (OAuth)
+
+Se soporta **GitHub** y **Google**. El flujo lo maneja Better Auth vía su handler HTTP montado en `/api/auth/*` (en `src/app.ts`), mientras que las rutas propias `/api/auth/login|register|logout|profile` conservan su prioridad.
+
+### Crear las apps de OAuth
+
+- **GitHub** → Settings → Developer settings → OAuth Apps → *New OAuth App*
+  - Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
+- **Google** → Cloud Console → Credentials → OAuth 2.0 Client IDs
+  - Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`
+
+Rellena `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env`.
+
+### Endpoints expuestos por Better Auth (además de los propios)
+
+| Método | Ruta                          | Descripción                                    |
+| ------ | ----------------------------- | ---------------------------------------------- |
+| POST   | `/api/auth/sign-in/social`    | Inicia el flujo OAuth (body: `provider`, `callbackURL`) |
+| GET/POST | `/api/auth/callback/:provider`| Callback del proveedor (crea sesión y redirige)|
+| GET    | `/api/auth/get-session`       | Devuelve la sesión actual                      |
+| GET    | `/api/auth/ok`                | Health check de Better Auth                    |
+
+### Uso desde el frontend
+
+Instala `better-auth` en el frontend y configura el cliente:
+
+```ts
+import { createAuthClient } from "better-auth/react";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  basePath: "/api/auth",
+});
+
+// Botón "Continuar con GitHub":
+authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" });
+```
+
+El backend expone `trustedOrigins: [CORS_ORIGIN]` para permitir el flujo desde el frontend (origen distinto).
+
+> Nota: un usuario que inicia sesión por OAuth queda vinculado a su cuenta con el `providerId` correspondiente en la tabla `Account`. El segundo inicio de sesión con el mismo proveedor no crea un usuario duplicado.
 
 ---
 
@@ -175,6 +223,7 @@ src/
 │   └── helpers.ts         # registerUser, registerAdmin, createPost, etc.
 ├── __tests__/             # Tests de integración (rutas)
 │   ├── auth.routes.test.ts
+│   ├── social-auth.routes.test.ts   # OAuth GitHub/Google (mockeando fetch)
 │   ├── users.routes.test.ts
 │   ├── admin.routes.test.ts
 │   └── posts.routes.test.ts

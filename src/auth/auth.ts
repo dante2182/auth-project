@@ -1,7 +1,11 @@
+// env (que carga dotenv) DEBE evaluarse antes que better-auth: el core de
+// Better Auth cachea process.env.NODE_ENV al importarse, y sin dotenv previo
+// NODE_ENV quedaría "" (ni development ni test) y el rate limiting no podría
+// resolver la IP del cliente (sin fallback a localhost) → bucket compartido.
+import { env } from "../config/env";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "../config/database";
-import { env } from "../config/env";
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -14,6 +18,25 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+
+  // Inicio de sesión con proveedores (GitHub y Google).
+  // Las credenciales se leen de variables de entorno; nunca se hardcodean.
+  // En tests se pasan valores dummy y el proveedor real se simula mockeando fetch.
+  socialProviders: {
+    github: {
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
+    },
+    google: {
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+    },
+  },
+
+  // Permite el flujo OAuth desde el frontend (origen distinto al backend).
+  // Sin esto, el origin-check de Better Auth podría rechazar el sign-in social
+  // y el callbackURL enviado desde el navegador.
+  trustedOrigins: [env.CORS_ORIGIN],
 
   session: {
     expiresIn: 60 * 60 * 24 * 7, // duración real de la sesión: 7 días
@@ -32,10 +55,28 @@ export const auth = betterAuth({
     window: 60, // 👈 typo corregido
     max: 10,
     storage: "memory",
+    // Reglas por ruta (tienen prioridad sobre las reglas especiales de Better
+    // Auth: /sign-in* es 3 por 10s y puede cortar el login social en pruebas).
+    // "/sign-in/*" y "/callback/*" cubren el flujo OAuth (sign-in/social y
+    // callback/:provider) con más margen para desarrollo y pruebas manuales.
+    customRules: {
+      "/sign-in/*": { window: 60, max: 30 },
+      "/callback/*": { window: 60, max: 30 },
+    },
   },
 
   advanced: {
     useSecureCookies: env.NODE_ENV === "production",
+    // Resolución de la IP del cliente para el rate limiting. Better Auth lee
+    // el header x-forwarded-for y recorta la cadena hasta el primer hop que no
+    // esté en trustedProxies. TRUSTED_PROXIES viene por env (CSV) para que en
+    // producción solo se cambien variables de entorno, sin tocar el código.
+    ipAddress: {
+      ipAddressHeaders: ["x-forwarded-for"],
+      trustedProxies: env.TRUSTED_PROXIES.split(",")
+        .map((ip) => ip.trim())
+        .filter(Boolean),
+    },
     // Solo si frontend y backend están en dominios distintos:
     // defaultCookieAttributes: {
     //   sameSite: env.NODE_ENV === "production" ? "none" : "lax",
