@@ -15,6 +15,7 @@ API backend con **Express + TypeScript**, autenticación con **Better Auth** y p
 | Auth      | Better Auth (email/password + OAuth GitHub/Google + sesiones) |
 | Validación| Zod 4                                  |
 | ORM       | Prisma 7 + PostgreSQL                  |
+| Sesiones  | Redis 7 (ioredis) — sesiones y códigos de verificación con TTL |
 | Tests     | Vitest + Supertest                     |
 
 ---
@@ -24,6 +25,7 @@ API backend con **Express + TypeScript**, autenticación con **Better Auth** y p
 - Node.js 20+
 - pnpm 11+
 - PostgreSQL en `localhost:5050` (usuario `postgres`, password `1234`)
+- Redis 7 accesible en `localhost:6379` (recomendado: contenedor Docker, ver [Sesiones en Redis](#sesiones-en-redis))
 
 ---
 
@@ -73,6 +75,7 @@ API backend con **Express + TypeScript**, autenticación con **Better Auth** y p
 | `NODE_ENV`          | `development` \| `production` \| `test`  |
 | `PORT`              | Puerto del servidor (default `3000`)     |
 | `DATABASE_URL`      | Cadena de conexión de PostgreSQL         |
+| `REDIS_URL`         | Cadena de conexión de Redis (default `redis://localhost:6379`) |
 | `BETTER_AUTH_SECRET`| Secreto (mín. 32 caracteres)             |
 | `BETTER_AUTH_URL`   | URL base de la API                       |
 | `CORS_ORIGIN`       | Origen permitido por CORS (default `http://localhost:5173`) |
@@ -126,6 +129,48 @@ authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" });
 El backend expone `trustedOrigins: [CORS_ORIGIN]` para permitir el flujo desde el frontend (origen distinto).
 
 > Nota: un usuario que inicia sesión por OAuth queda vinculado a su cuenta con el `providerId` correspondiente en la tabla `Account`. El segundo inicio de sesión con el mismo proveedor no crea un usuario duplicado.
+
+---
+
+## Sesiones en Redis
+
+Better Auth se configura con `secondaryStorage` (`src/auth/auth.ts`): las **sesiones activas** y los **códigos de verificación** (OAuth, reset de password) viven en **Redis**, no en Postgres. Las tablas `Session`/`Verification` del schema quedan vacías (decisión: no se usan).
+
+- Cada sesión se guarda con **TTL = tiempo de expiración** (`expiresIn` 7 días), así que **Redis las borra solo** al expirar.
+- En Postgres solo persisten `User`, `Account` y los roles (`UserRole`).
+- El rate limit de Better Auth también usa Redis (`rateLimit.storage: "secondary-storage"`).
+
+### Levantar Redis (recomendado: Docker Desktop)
+
+```bash
+docker run -d --name project-auth-redis \
+  -p 6379:6379 --restart unless-stopped \
+  redis:7-alpine
+```
+
+> El `REDIS_URL` no cambia entre una instancia local de Redis y un contenedor que publique el puerto `6379`. Evita usar un Redis dentro de WSL2: al dormirse el distro, el puerto desaparece en Windows (`ECONNREFUSED`).
+
+### Índices por entorno
+
+| Entorno | Índice Redis | Dónde |
+| ------- | ------------ | ----- |
+| dev     | `/0`         | `.env` |
+| test    | `/1`         | `.env.test` (`REDIS_URL="redis://localhost:6379/1"`) |
+
+El `setup.ts` de tests hace `redis.flushdb()` en cada test; al apuntar a `/1` no borra las sesiones de dev.
+
+### Ver las sesiones
+
+- **Redis Insight**: conexión `localhost:6379` → Browser. La key de una sesión es el **token pelado** (valor JSON con `session` + `user`); además hay un índice `active-sessions-<userId>`.
+- **CLI**:
+  ```bash
+  docker exec project-auth-redis redis-cli --scan
+  docker exec project-auth-redis redis-cli ttl <token>
+  ```
+
+### Nota sobre el seed
+
+`prisma/seed.ts` importa `auth` (y por tanto el cliente de ioredis), que **mantiene vivo el proceso** si no se cierra. El `.finally` cierra Prisma **y** Redis con `redis.disconnect()`; sin eso, `pnpm db:seed` (y el `globalSetup` de tests, que lo llama vía `execSync`) se queda colgado tras imprimir `Seed completado ✅`.
 
 ---
 
@@ -209,7 +254,7 @@ Todas las rutas bajo `/api`.
 - `vitest.config.ts`:
   - Carga `.env.test` e inyecta sus variables en los workers.
   - `globalSetup` (`src/test/global-setup.ts`): crea la BD si no existe, aplica `prisma migrate deploy` y ejecuta el seed (roles + admin).
-  - `setup.ts`: limpia las tablas entre tests.
+  - `setup.ts`: limpia las tablas de Postgres y hace `redis.flushdb()` (índice `/1`) entre tests.
   - `fileParallelism: false` → los archivos corren en serie porque comparten BD.
   - El rate limit de Better Auth se desactiva en `NODE_ENV=test` (`src/auth/auth.ts`).
 
@@ -263,6 +308,8 @@ pnpm typecheck
 - **`DATABASE_URL required` en tests**: asegúrate de que `.env.test` exista (está ignorado por git).
 - **Tests lentos**: el globalSetup aplica migraciones + seed; es normal que la primera corrida tarde.
 - **Tests en paralelo corruptos**: los archivos corren en serie (`fileParallelism: false`); no cambies eso mientras los tests compartan BD.
+- **Tests colgados tras `Seed completado ✅`**: el seed importa `auth` → ioredis abre un socket que mantiene vivo el proceso. El `.finally` de `prisma/seed.ts` debe llamar `redis.disconnect()` (además de `prisma.$disconnect()`), o el `execSync` del globalSetup no retorna y Vitest nunca arranca los tests.
+- **`ECONNREFUSED` hacia Redis en tests**: revisa que el Redis de Docker esté corriendo (`docker ps`). Un Redis en WSL2 puede dejar de responder cuando el distro duerme.
 - **Rate limit en tests**: si agregas muchos requests por ventana, revisa que `NODE_ENV=test` para que el rate limit siga desactivado.
 
 ---

@@ -7,6 +7,10 @@ const envSchema = z.object({
     .default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  // Redis: secondary storage de Better Auth (sesiones + códigos de verificación
+  // con expiración automática vía TTL). En local apunta al Redis de WSL/Ubuntu
+  // (puerto 6379); en tests a un índice separado (/1) para no pisar datos de dev.
+  REDIS_URL: z.string().default("redis://localhost:6379"),
   BETTER_AUTH_SECRET: z
     .string()
     .min(32, "BETTER_AUTH_SECRET must be at least 32 characters"),

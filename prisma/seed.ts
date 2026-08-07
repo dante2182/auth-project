@@ -1,6 +1,7 @@
 import { prisma } from "../src/config/database";
 import { env } from "../src/config/env";
 import { auth } from "../src/auth/auth";
+import { redis } from "../src/config/redis";
 
 // Crea los roles base y el usuario administrador inicial.
 // Uso: pnpm db:seed
@@ -59,4 +60,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    redis.disconnect();
   });

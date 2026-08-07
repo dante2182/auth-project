@@ -6,14 +6,23 @@ import { env } from "../config/env";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { prisma } from "../config/database";
+import { redis } from "../config/redis";
+import { redisSecondaryStorage } from "./redis-secondary-storage";
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,
 
+  // Postgres (Prisma) sigue siendo la fuente de verdad para User y Account.
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+
+  // Redis como secondary storage: las sesiones activas y los códigos de
+  // verificación se guardan aquí con TTL = expiración, así Redis las elimina
+  // automáticamente al vencer. Las tablas `session`/`verification` de Postgres
+  // quedan vacías e inactivas (por eso el schema no cambia).
+  secondaryStorage: redisSecondaryStorage(redis),
 
   emailAndPassword: {
     enabled: true,
@@ -54,7 +63,10 @@ export const auth = betterAuth({
     enabled: env.NODE_ENV !== "test",
     window: 60, // 👈 typo corregido
     max: 10,
-    storage: "memory",
+    // Contadores en Redis (secondary-storage) en vez de en memoria: persistente
+    // y compartido entre instancias. "secondary-storage" ya usa el adapter de
+    // arriba vía su método `increment` (incr + expire atómico).
+    storage: "secondary-storage",
     // Reglas por ruta (tienen prioridad sobre las reglas especiales de Better
     // Auth: /sign-in* es 3 por 10s y puede cortar el login social en pruebas).
     // "/sign-in/*" y "/callback/*" cubren el flujo OAuth (sign-in/social y
