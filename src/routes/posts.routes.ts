@@ -2,6 +2,7 @@ import { Router } from "express";
 import * as postsController from "../controllers/posts/posts.controller";
 import { requireAuth } from "../middlewares/auth.middleware";
 import { validate } from "../middlewares/validate.middleware";
+import { rateLimit } from "../middlewares/rateLimit.middleware";
 import {
   createPostSchema,
   updatePostSchema,
@@ -9,6 +10,9 @@ import {
 } from "../schemas/post.schema";
 
 const router = Router();
+
+// Límite moderado para el API de posts (60 req/60s por IP).
+router.use(rateLimit({ keyPrefix: "rl-posts", window: 60, max: 60 }));
 
 router.get("/", postsController.getAllPosts);
 // /mine debe ir ANTES de /:id para que "mine" no pase por la validación de CUID.
